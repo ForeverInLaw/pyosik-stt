@@ -68,7 +68,7 @@ __id__ = "pyosik"
 __name__ = "Pyosik"
 __description__ = "Расшифровка исходящих голосовых через NVIDIA Whisper Large v3"
 __author__ = "@nevermorelove"
-__version__ = "1.0.2"
+__version__ = "1.0.3"
 __icon__ = "PyosikSTT/0"
 __sdk_version__ = ">=1.4.5.0"
 __requirements__ = ["grpclib==0.4.9", "protobuf==7.36.2"]
