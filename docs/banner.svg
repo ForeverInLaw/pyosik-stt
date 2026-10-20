@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400" role="img" aria-labelledby="title description">
+  <title id="title">Pyosik</title>
+  <desc id="description">Плагин для AyuGram и exteraGram. Голосовое сообщение с расшифровкой, оформленной цитатой.</desc>
+  <rect width="1200" height="400" rx="24" fill="#13191d"/>
+  <path d="M48 332H1152" stroke="#303a3f"/>
+  <g font-family="Segoe UI,Arial,sans-serif">
+    <text x="56" y="66" fill="#a9b8ba" font-size="13" letter-spacing="2.5">AYUGRAM / EXTERAGRAM</text>
+    <text x="52" y="165" fill="#f4f1e9" font-size="86" font-weight="700" letter-spacing="-4">Pyosik<tspan fill="#c8dc9e">.</tspan></text>
+    <text x="56" y="214" fill="#d2dbd8" font-size="27">Голосовые с текстом.</text>
+    <text x="56" y="256" fill="#9daeb0" font-size="17">Отправь голосовое. Получи расшифровку.</text>
+    <text x="56" y="369" fill="#a9b8ba" font-size="14">NVIDIA WHISPER LARGE V3</text>
+    <text x="1144" y="369" fill="#c8dc9e" font-size="14" text-anchor="end">@nevermorelove</text>
+    <rect x="651" y="60" width="493" height="242" rx="20" fill="#243239"/>
+    <circle cx="697" cy="109" r="23" fill="#c8dc9e"/>
+    <path d="M692 99L706 109L692 119Z" fill="#1c2b24"/>
+    <g stroke="#c8dc9e" stroke-width="4" stroke-linecap="round">
+      <path d="M742 104v10m10-18v26m10-32v38m10-26v14m10-36v58m10-43v28m10-40v52m10-42v32m10-25v18m10-35v52m10-43v34m10-29v24m10-17v10m10-32v54m10-42v30m10-21v12m10-27v40m10-32v24m10-15v6m10-20v34m10-25v16m10-12v8"/>
+    </g>
+    <text x="1065" y="114" fill="#c4d0d1" font-size="14">0:07</text>
+    <rect x="676" y="151" width="443" height="122" rx="10" fill="#1b292f"/>
+    <path d="M678 161v102" stroke="#c8dc9e" stroke-width="4" stroke-linecap="round"/>
+    <path d="M1084 164h9v9h-5l-4 7v-7zm14 0h9v9h-5l-4 7v-7z" fill="#c8dc9e" opacity=".8"/>
+    <text x="695" y="191" fill="#f4f1e9" font-size="19">Привет! Буду через десять минут.</text>
+    <text x="695" y="223" fill="#f4f1e9" font-size="19">Захвати, пожалуйста, кофе.</text>
+    <text x="1095" y="256" fill="#9daeb0" font-size="12" text-anchor="end">пример расшифровки</text>
+  </g>
+</svg>
