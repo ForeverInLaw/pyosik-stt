@@ -73,6 +73,28 @@ adb logcat -s plugin.pyosik
 Для установки файла из GitHub в настройках «Система плагинов» должны быть
 разрешены «Неизвестные источники».
 
+## GitHub Actions
+
+Workflow [CI and release](https://github.com/ForeverInLaw/pyosik-stt/actions/workflows/ci.yml)
+запускается для `main`, pull request и тегов `v*`. Он проверяет код Ruff,
+запускает тесты на Python 3.11 и сохраняет `pyosik.plugin` в артефактах запуска.
+Кнопка **Run workflow** запускает эти же проверки и упаковку.
+
+При пуше тега workflow также публикует GitHub Release с файлом `pyosik.plugin`
+и автоматически составленным списком изменений. Тег должен совпадать
+с `__version__` в `pyosik.py`: для версии `1.0.3` нужен тег `v1.0.3`.
+
+Для выпуска версии обнови `__version__`, закоммить изменение и отправь тег:
+
+```shell
+git push origin main
+git tag v1.0.3
+git push origin v1.0.3
+```
+
+Публикация выполняется после успешных проверок. Она использует штатный
+`GITHUB_TOKEN` с правом `contents: write` только в отдельной задаче релиза.
+
 ## Иконка плагина
 
 Метаданные `__icon__ = "PyosikSTT/0"` указывают на первый стикер
