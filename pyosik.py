@@ -32,10 +32,15 @@ from concurrent.futures import CancelledError
 from pathlib import Path
 from threading import Thread
 
-from android_utils import copy_to_clipboard, run_on_ui_thread
+from android import R as AndroidR
+from android.text import InputType
+from android.text.method import PasswordTransformationMethod
+from android.widget import ImageView, LinearLayout
+from android_utils import OnClickListener, run_on_ui_thread
 from base_plugin import BasePlugin
 from client_utils import (
     STAGE_QUEUE,
+    get_last_fragment,
     get_notification_center,
     run_on_queue,
     send_request,
@@ -46,26 +51,31 @@ from grpclib.const import Status
 from grpclib.exceptions import GRPCError
 from java import dynamic_proxy
 from org.telegram.messenger import (
+    AndroidUtilities,
     DialogObject,
     MessageObject,
     NotificationCenter,
     UserConfig,
 )
 from org.telegram.tgnet import TLRPC
+from org.telegram.ui.ActionBar import Theme
+from org.telegram.ui.Components import EditTextBoldCursor
+from ui.alert import AlertDialogBuilder
 from ui.bulletin import BulletinHelper
-from ui.settings import Header, Input, Switch, Text
+from ui.settings import Divider, Header, Switch, Text
 
 __id__ = "pyosik"
 __name__ = "Pyosik"
 __description__ = "Расшифровка исходящих голосовых через NVIDIA Whisper Large v3"
 __author__ = "@nevermorelove"
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 __sdk_version__ = ">=1.4.5.0"
 __requirements__ = ["grpclib==0.4.9", "protobuf==7.36.2"]
 
 FUNCTION_ID = "b702f636-f60c-4a3d-a6f4-f3568c13bd7d"
 MAX_AUDIO_BYTES = 20 * 1024 * 1024
 MAX_PENDING = 4
+LANGUAGES = {"multi": "Автоматически", "ru": "Русский", "en": "Английский"}
 
 # Generated from NVIDIA's MIT-licensed Riva schemas by tools/update_schema.py.
 RIVA_SCHEMA = "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"
@@ -189,7 +199,6 @@ class PyosikPlugin(BasePlugin):
         self._generation = object()
         self._seen = OrderedDict()
         self._pending = set()
-        self._last_text = ""
         self._worker = AsyncWorker()
         self._recognizer = RivaClient()
         self._lock = asyncio.Lock()
@@ -211,45 +220,133 @@ class PyosikPlugin(BasePlugin):
                 self._listener, NotificationCenter.messageReceivedByServer
             )
         self._worker.close()
-        self._last_text = ""
 
     def create_settings(self):
+        language = str(self.get_setting("language", "multi")).strip() or "multi"
         return [
-            Header(text="Pyosik"),
+            Header(text="Расшифровка"),
             Switch(
-                key="enabled", text="Расшифровывать исходящие голосовые", default=True
+                key="enabled",
+                text="Авторасшифровка",
+                default=True,
+                subtext="Исходящие голосовые",
             ),
-            Input(
-                key="api_key",
-                text="NVIDIA API-ключ",
-                default="",
-                icon="msg_permissions",
-            ),
-            Input(
-                key="language",
+            Text(
                 text="Язык",
-                default="multi",
-                subtext="multi — автоматически, ru — русский, en — английский",
+                subtext=LANGUAGES.get(language, language),
+                on_click=lambda view: self._show_language_dialog(),
             ),
+            Divider(),
+            Header(text="Подключение"),
             Text(
-                text="Скопировать последнюю расшифровку",
-                subtext="Если текст не поместился в подпись или редактирование не удалось",
-                icon="msg_copy",
-                on_click=lambda view: self._copy_last_text(),
+                text="API-ключ",
+                subtext="Добавлен"
+                if self.get_setting("api_key", "")
+                else "Не добавлен",
+                on_click=lambda view: self._show_input_dialog(
+                    "API-ключ NVIDIA",
+                    "api_key",
+                    "nvapi-...",
+                    secret=True,
+                ),
             ),
-            Text(
-                text="Распознавание в облаке NVIDIA",
-                subtext="Аудио исходящих голосовых передаётся NVIDIA. Готовые подписи, "
-                "пересланные, исчезающие сообщения и секретные чаты пропускаются.",
-            ),
+            Divider(text="Аудио передаётся NVIDIA для распознавания."),
         ]
 
-    def _copy_last_text(self):
-        if self._last_text:
-            copy_to_clipboard(self._last_text)
-            BulletinHelper.show_copied_to_clipboard()
+    def _show_language_dialog(self):
+        fragment = get_last_fragment()
+        if fragment is None or fragment.getParentActivity() is None:
+            return
+        codes = list(LANGUAGES)
+
+        def select_language(dialog, index):
+            dialog.dismiss()
+            if index == len(codes):
+                self._show_input_dialog("Код языка", "language", "Например: de, fr, es")
+            else:
+                self.set_setting("language", codes[index], reload_settings=True)
+
+        dialog = AlertDialogBuilder(fragment.getParentActivity())
+        dialog.set_title("Язык распознавания")
+        dialog.set_items([*LANGUAGES.values(), "Другой язык"], select_language)
+        dialog.show()
+
+    def _show_input_dialog(self, title, setting_key, hint, *, secret=False):
+        fragment = get_last_fragment()
+        if fragment is None or fragment.getParentActivity() is None:
+            return
+        activity = fragment.getParentActivity()
+        field = EditTextBoldCursor(activity)
+        field.setSingleLine(True)
+        field.setInputType(
+            InputType.TYPE_CLASS_TEXT
+            | (InputType.TYPE_TEXT_VARIATION_PASSWORD if secret else 0)
+        )
+        field.setTextSize(18)
+        field.setTextColor(Theme.getColor(Theme.key_dialogTextBlack))
+        field.setHintTextColor(Theme.getColor(Theme.key_dialogTextHint))
+        field.setHint(hint)
+        field.setText(str(self.get_setting(setting_key, "")))
+        field.setSelectAllOnFocus(True)
+        field.setPadding(0, 0, 0, 0)
+        field.setMinHeight(AndroidUtilities.dp(48))
+        container = LinearLayout(activity)
+        # The eye's 48dp touch target adds its own 12dp visual inset.
+        container.setPadding(
+            AndroidUtilities.dp(24),
+            AndroidUtilities.dp(8),
+            AndroidUtilities.dp(12 if secret else 24),
+            0,
+        )
+        if secret:
+            container.addView(field, LinearLayout.LayoutParams(0, -2, 1.0))
+            eye = ImageView(activity)
+            eye.setImageResource(
+                activity.getResources().getIdentifier(
+                    "design_password_eye", "drawable", activity.getPackageName()
+                )
+            )
+            eye.setScaleType(ImageView.ScaleType.CENTER)
+            eye.setColorFilter(Theme.getColor(Theme.key_dialogTextBlack))
+            eye.setContentDescription("Показать API-ключ")
+            eye.setBackground(
+                Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), 1)
+            )
+
+            def toggle_password(view):
+                visible = field.getTransformationMethod() is not None
+                selection = field.getSelectionEnd()
+                field.setTransformationMethod(
+                    None if visible else PasswordTransformationMethod.getInstance()
+                )
+                field.setSelection(max(0, selection))
+                eye.setImageState(
+                    [AndroidR.attr.state_checked] if visible else [], True
+                )
+                eye.setContentDescription(
+                    "Скрыть API-ключ" if visible else "Показать API-ключ"
+                )
+
+            eye.setOnClickListener(OnClickListener(toggle_password))
+            container.addView(eye, AndroidUtilities.dp(48), AndroidUtilities.dp(48))
         else:
-            BulletinHelper.show_info("Расшифровок пока нет.")
+            container.addView(field, -1, -2)
+
+        def save(dialog, button):
+            value = str(field.getText()).strip()
+            if setting_key == "language" and not value:
+                value = "multi"
+            self.set_setting(setting_key, value, reload_settings=True)
+            dialog.dismiss()
+
+        dialog = AlertDialogBuilder(activity)
+        dialog.set_title(title)
+        dialog.set_view(container)
+        dialog.set_positive_button("Сохранить", save)
+        dialog.set_negative_button("Отмена")
+        dialog.show()
+        field.requestFocus()
+        AndroidUtilities.showKeyboard(field)
 
     def on_voice_sent(self, account, args):
         if not self._active or not self.get_setting("enabled", True) or len(args) < 4:
@@ -346,7 +443,6 @@ class PyosikPlugin(BasePlugin):
             )
             return
 
-        self._last_text = text
         if str(message.messageOwner.message or "").strip():
             return
         account, dialog_id, message_id = key
@@ -355,7 +451,7 @@ class PyosikPlugin(BasePlugin):
         caption_length = len(text.encode("utf-16-le")) // 2
         if caption_length > controller.getCaptionMaxLengthLimit():
             BulletinHelper.show_error(
-                "Pyosik: текст длиннее лимита подписи. Скопируй его в настройках."
+                "Pyosik: расшифровка длиннее лимита подписи. Запиши более короткое голосовое."
             )
             return
 
@@ -376,7 +472,7 @@ class PyosikPlugin(BasePlugin):
                 self.logger.warning("Caption edit failed: %s", error.text)
                 run_on_ui_thread(
                     lambda: BulletinHelper.show_error(
-                        "Pyosik: Telegram отклонил подпись. Текст можно скопировать в настройках."
+                        "Pyosik: Telegram отклонил редактирование подписи. Попробуй позже."
                     )
                 )
                 return

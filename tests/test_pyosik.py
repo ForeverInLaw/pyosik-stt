@@ -15,19 +15,30 @@ from grpclib.exceptions import GRPCError
 def load_plugin():
     """Replace only the Android SDK boundary; use the real gRPC and protobuf libraries."""
     sdk = {
+        "android": {"R": SimpleNamespace(attr=SimpleNamespace(state_checked=16842912))},
+        "android.text.method": {"PasswordTransformationMethod": Mock()},
+        "android.text": {
+            "InputType": SimpleNamespace(
+                TYPE_CLASS_TEXT=1,
+                TYPE_TEXT_VARIATION_PASSWORD=128,
+            )
+        },
+        "android.widget": {"LinearLayout": Mock(), "ImageView": Mock()},
         "android_utils": {
-            "copy_to_clipboard": Mock(),
+            "OnClickListener": lambda fn: fn,
             "run_on_ui_thread": lambda fn: fn(),
         },
         "base_plugin": {"BasePlugin": type("BasePlugin", (), {})},
         "client_utils": {
             "STAGE_QUEUE": "stageQueue",
+            "get_last_fragment": Mock(),
             "get_notification_center": Mock(),
             "run_on_queue": lambda fn, queue: fn(),
             "send_request": Mock(),
         },
         "java": {"dynamic_proxy": lambda interface: object},
         "org.telegram.messenger": {
+            "AndroidUtilities": Mock(),
             "DialogObject": SimpleNamespace(isEncryptedDialog=Mock(return_value=False)),
             "MessageObject": Mock(
                 side_effect=lambda account, raw, *args: SimpleNamespace(
@@ -50,7 +61,13 @@ def load_plugin():
             )
         },
         "ui.bulletin": {"BulletinHelper": Mock()},
-        "ui.settings": dict.fromkeys(("Header", "Input", "Switch", "Text"), Mock()),
+        "org.telegram.ui.ActionBar": {"Theme": Mock()},
+        "org.telegram.ui.Components": {"EditTextBoldCursor": Mock()},
+        "ui.alert": {"AlertDialogBuilder": Mock()},
+        "ui.settings": {
+            name: (lambda kind=name, **kwargs: SimpleNamespace(kind=kind, **kwargs))
+            for name in ("Header", "Divider", "Switch", "Text")
+        },
     }
     modules = {}
     for name, members in sdk.items():
@@ -154,6 +171,9 @@ class PluginTests(unittest.TestCase):
         self.instance.get_setting = lambda key, default=None: self.settings.get(
             key, default
         )
+        self.instance.set_setting = Mock(
+            side_effect=lambda key, value, **kwargs: self.settings.update({key: value})
+        )
         self.instance.logger = Mock()
         self.controller = Mock(maxCaptionLength=1024)
         self.controller.getCaptionMaxLengthLimit.return_value = 1024
@@ -252,6 +272,43 @@ class PluginTests(unittest.TestCase):
         self.instance.on_voice_sent(0, self.args)
         self.assertEqual(self.futures, [])
 
+    def test_settings_hide_key_and_preserve_existing_language(self):
+        self.settings["api_key"] = "private-api-credential"
+        self.settings["language"] = "fr"
+        rows = self.instance.create_settings()
+        self.assertNotIn("private-api-credential", repr(rows))
+        language = next(row for row in rows if getattr(row, "text", None) == "Язык")
+        self.assertEqual(language.subtext, "fr")
+        self.assertEqual(self.settings["language"], "fr")
+
+    def test_language_picker_keeps_canonical_setting_format(self):
+        plugin.AlertDialogBuilder.reset_mock()
+        self.instance._show_language_dialog()
+        dialog = plugin.AlertDialogBuilder.return_value
+        on_select = dialog.set_items.call_args.args[1]
+        on_select(dialog, 1)
+        self.assertEqual(self.settings["language"], "ru")
+        self.instance.set_setting.assert_called_with(
+            "language", "ru", reload_settings=True
+        )
+
+    def test_key_editor_starts_masked_and_saves_existing_setting(self):
+        plugin.AlertDialogBuilder.reset_mock()
+        plugin.EditTextBoldCursor.reset_mock()
+        self.instance._show_input_dialog(
+            "API-ключ NVIDIA", "api_key", "nvapi-...", secret=True
+        )
+        field = plugin.EditTextBoldCursor.return_value
+        field.setInputType.assert_called_with(1 | 128)
+        self.instance.set_setting.assert_not_called()
+        field.getText.return_value = "  replacement-key  "
+        dialog = plugin.AlertDialogBuilder.return_value
+        on_save = dialog.set_positive_button.call_args.args[1]
+        on_save(dialog, -1)
+        self.instance.set_setting.assert_called_once_with(
+            "api_key", "replacement-key", reload_settings=True
+        )
+
     def test_old_result_after_reload_never_edits_message(self):
         self.instance.on_voice_sent(0, self.args)
         self.instance._generation = object()
@@ -269,23 +326,20 @@ class PluginTests(unittest.TestCase):
         self.raw.message = "User caption"
         self.futures[0].set_result("Transcript")
         plugin.send_request.assert_not_called()
-        self.assertEqual(self.instance._last_text, "Transcript")
 
-    def test_long_transcript_is_retained_without_silent_truncation(self):
+    def test_long_transcript_is_not_silently_truncated(self):
         self.instance.on_voice_sent(0, self.args)
         text = "😀" * 600
         self.futures[0].set_result(text)
         plugin.send_request.assert_not_called()
-        self.assertEqual(self.instance._last_text, text)
         plugin.BulletinHelper.show_error.assert_called_once()
 
-    def test_telegram_error_preserves_transcript_for_copying(self):
+    def test_telegram_error_is_reported_without_processing_updates(self):
         self.instance.on_voice_sent(0, self.args)
         self.futures[0].set_result("Transcript")
         callback = plugin.send_request.call_args.args[1]
         callback(None, SimpleNamespace(text="MESSAGE_AUTHOR_REQUIRED"))
         self.controller.processUpdates.assert_not_called()
-        self.assertEqual(self.instance._last_text, "Transcript")
         plugin.BulletinHelper.show_error.assert_called_once()
 
     def test_server_updates_are_applied_even_if_plugin_was_disabled_after_edit(self):
