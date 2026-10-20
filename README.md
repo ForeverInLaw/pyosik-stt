@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ForeverInLaw/pyosik-stt/raw/refs/heads/main/pyosik.py">Скачать плагин</a> ·
+  <a href="https://github.com/ForeverInLaw/pyosik-stt/releases/latest/download/pyosik.plugin">Скачать плагин</a> ·
   <a href="#установка">Установка</a> ·
   <a href="docs/development.md">Разработка</a> ·
   <a href="https://t.me/nevermorelove">Автор</a>
@@ -36,31 +36,19 @@
 ## Установка
 
 Нужен клиент с **Python Plugin SDK 1.4.5.0+**. Плагин проверен на AyuGram
-с SDK 1.4.5.7. Для работы на телефоне достаточно файла [`pyosik.py`](pyosik.py).
+с SDK 1.4.5.7. Для установки достаточно одного файла `pyosik.plugin`.
 
-Ниже приведён проверенный способ установки с компьютера через Dev Server.
-На компьютере нужны Git, Python и [ADB](https://developer.android.com/tools/adb).
-
-1. На телефоне включи движок плагинов, режим разработчика и Dev Server.
-2. Склонируй репозиторий:
-
-   ```shell
-   git clone https://github.com/ForeverInLaw/pyosik-stt.git
-   cd pyosik-stt
-   ```
-
-3. Подключи телефон через ADB и установи плагин:
-
-   ```shell
-   adb forward tcp:42690 tcp:42690
-   python tools/dev.py install
-   ```
-
-4. Открой настройки Pyosik, введи [NVIDIA API-ключ](https://build.nvidia.com/openai/whisper-large-v3/api)
+1. Скачай [pyosik.plugin из последнего релиза](https://github.com/ForeverInLaw/pyosik-stt/releases/latest/download/pyosik.plugin).
+2. В настройках клиента открой «Плагины» и включи систему плагинов.
+   Через значок информации открой «Система плагинов» и включи «Неизвестные источники».
+3. Открой скачанный файл в AyuGram или exteraGram. Можно отправить файл
+   в «Избранное» и открыть вложение.
+4. Подтверди установку и включи Pyosik.
+5. Открой настройки Pyosik, введи [NVIDIA API-ключ](https://build.nvidia.com/openai/whisper-large-v3/api)
    и отправь короткое голосовое в "Избранное".
 
-Во время первого включения SDK установит зависимости с PyPI. Dev Server
-после установки можно выключить.
+Во время первого включения SDK установит зависимости с PyPI.
+Установка через Dev Server описана в [документации разработки](docs/development.md#работа-с-телефоном).
 
 ### Настройки
 
