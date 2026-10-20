@@ -1,0 +1,8 @@
+.continuum/
+.venv/
+__pycache__/
+*.pyc
+*.log
+PyosikPlugin.json
+riva_helper.exe
+.device/
