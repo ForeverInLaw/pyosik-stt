@@ -63,6 +63,15 @@ adb logcat -s plugin.pyosik
 `Queued voice transcription` и `Caption updated` для одного сообщения.
 Проверь, что подпись появилась в виде цитаты.
 
+## Иконка плагина
+
+Метаданные `__icon__ = "PyosikSTT/0"` указывают на первый стикер
+в [паке Pyosik STT](https://t.me/addstickers/PyosikSTT).
+SDK принимает ссылку на стикер, а не путь к PNG или URL изображения.
+На проверенной сборке AyuGram индексы стикеров начинаются с нуля.
+Исходник сохранён в `docs/pyosik-mascot.png`, версия для Telegram
+размером 512×512 с прозрачным фоном находится в `docs/pyosik-icon.webp`.
+
 ## Генерация схемы Riva
 
 Схема встроена в `pyosik.py` как сжатый protobuf-дескриптор.
