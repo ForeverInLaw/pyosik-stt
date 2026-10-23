@@ -28,7 +28,11 @@ def load_plugin():
             "OnClickListener": lambda fn: fn,
             "run_on_ui_thread": lambda fn: fn(),
         },
-        "base_plugin": {"BasePlugin": type("BasePlugin", (), {})},
+        "base_plugin": {
+            "BasePlugin": type("BasePlugin", (), {}),
+            "MenuItemData": lambda **kwargs: SimpleNamespace(**kwargs),
+            "MenuItemType": SimpleNamespace(CHAT_ACTION_MENU="chat_action_menu"),
+        },
         "client_utils": {
             "STAGE_QUEUE": "stageQueue",
             "get_last_fragment": Mock(),
@@ -175,6 +179,8 @@ class PluginTests(unittest.TestCase):
             side_effect=lambda key, value, **kwargs: self.settings.update({key: value})
         )
         self.instance.logger = Mock()
+        self.instance.add_menu_item = Mock(side_effect=lambda item: item.text)
+        self.instance.remove_menu_item = Mock()
         self.controller = Mock(maxCaptionLength=1024)
         self.controller.getCaptionMaxLengthLimit.return_value = 1024
         self.client = Mock()
@@ -320,6 +326,84 @@ class PluginTests(unittest.TestCase):
         self.settings["enabled"] = False
         self.futures[0].set_result("Transcript")
         plugin.send_request.assert_not_called()
+
+    def test_chat_menu_persists_exclusion_and_offers_reenable(self):
+        disable = self.instance.add_menu_item.call_args_list[0].args[0]
+        self.assertEqual(disable.menu_type, "chat_action_menu")
+        disable.on_click({"account": 1, "dialog_id": 1234})
+        self.assertEqual(self.settings["disabled_chats"], ["1:1234"])
+        enable = self.instance.add_menu_item.call_args_list[-1].args[0]
+        self.assertEqual(enable.text, "Включить авторасшифровку")
+        self.assertEqual(
+            enable.condition, "dialog_id != 0 && ((account == 1 && dialog_id == 1234L))"
+        )
+        worker = self.instance._worker
+        self.instance.on_plugin_unload()
+        with patch.object(plugin, "AsyncWorker", return_value=worker):
+            self.instance.on_plugin_load()
+        self.assertFalse(self.instance._chat_enabled(1, 1234))
+        enable.on_click({"account": 1, "dialog_id": 1234})
+        self.assertEqual(self.settings["disabled_chats"], [])
+        self.instance.on_voice_sent(1, self.args)
+        self.assertEqual(len(self.futures), 1)
+        self.futures[0].set_result("Reenabled transcript")
+        plugin.send_request.assert_called_once()
+
+    def test_disabled_chat_is_isolated_by_account_and_dialog(self):
+        self.instance._set_chat_enabled({"account": 1, "dialog_id": 1234}, False)
+        self.instance.on_voice_sent(1, self.args)
+        self.assertEqual(self.futures, [])
+        self.instance.on_voice_sent(0, self.args)
+        other_chat = self.args.copy()
+        other_chat[3] = -5678
+        self.instance.on_voice_sent(1, other_chat)
+        self.assertEqual(len(self.futures), 2)
+        for future in self.futures:
+            future.set_result("Allowed transcript")
+        self.assertEqual(plugin.send_request.call_count, 2)
+
+    def test_chat_disable_cancels_old_results_even_after_reenable(self):
+        self.instance.on_voice_sent(1, self.args)
+        context = {"account": 1, "dialog_id": 1234}
+        self.instance._set_chat_enabled(context, False)
+        self.instance._set_chat_enabled(context, True)
+        self.futures[0].set_result("Cancelled transcript")
+        plugin.send_request.assert_not_called()
+        self.assertEqual(self.instance._pending, set())
+        self.assertEqual(self.instance._cancelled, set())
+        new_message = self.args.copy()
+        new_message[1] = 43
+        self.instance.on_voice_sent(1, new_message)
+        self.futures[1].set_result("New transcript")
+        plugin.send_request.assert_called_once()
+
+    def test_disabled_queue_never_uploads_even_after_reenable(self):
+        async def check_queue():
+            self.instance._lock = asyncio.Lock()
+            self.instance._recognizer = SimpleNamespace(transcribe=AsyncMock())
+            async with self.instance._lock:
+                self.instance.on_voice_sent(1, self.args)
+                queued = asyncio.create_task(
+                    self.instance._transcribe(
+                        (1, 1234, 42), ("/cache/voice.ogg",), "test-key", "multi"
+                    )
+                )
+                await asyncio.sleep(0)
+                context = {"account": 1, "dialog_id": 1234}
+                self.instance._set_chat_enabled(context, False)
+                self.instance._set_chat_enabled(context, True)
+            with self.assertRaises(asyncio.CancelledError):
+                await queued
+            self.instance._recognizer.transcribe.assert_not_awaited()
+
+        asyncio.run(check_queue())
+
+    def test_missing_context_and_secret_chat_do_not_change_settings(self):
+        for context in ({}, {"account": 0}, {"account": 0, "dialog_id": 0}):
+            self.instance._set_chat_enabled(context, False)
+        plugin.DialogObject.isEncryptedDialog.return_value = True
+        self.instance._set_chat_enabled({"account": 0, "dialog_id": 1234}, False)
+        self.instance.set_setting.assert_not_called()
 
     def test_caption_added_during_recognition_is_preserved(self):
         self.instance.on_voice_sent(0, self.args)

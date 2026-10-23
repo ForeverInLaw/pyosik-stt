@@ -37,7 +37,7 @@ from android.text import InputType
 from android.text.method import PasswordTransformationMethod
 from android.widget import ImageView, LinearLayout
 from android_utils import OnClickListener, run_on_ui_thread
-from base_plugin import BasePlugin
+from base_plugin import BasePlugin, MenuItemData, MenuItemType
 from client_utils import (
     STAGE_QUEUE,
     get_last_fragment,
@@ -68,7 +68,7 @@ __id__ = "pyosik"
 __name__ = "Pyosik"
 __description__ = "Расшифровка исходящих голосовых через NVIDIA Whisper Large v3"
 __author__ = "@nevermorelove"
-__version__ = "1.0.3"
+__version__ = "1.1.0"
 __icon__ = "PyosikSTT/0"
 __sdk_version__ = ">=1.4.5.0"
 __requirements__ = ["grpclib==0.4.9", "protobuf==7.36.2"]
@@ -200,6 +200,8 @@ class PyosikPlugin(BasePlugin):
         self._generation = object()
         self._seen = OrderedDict()
         self._pending = set()
+        self._cancelled = set()
+        self._chat_menu_items = []
         self._worker = AsyncWorker()
         self._recognizer = RivaClient()
         self._lock = asyncio.Lock()
@@ -212,15 +214,68 @@ class PyosikPlugin(BasePlugin):
             center.addObserver(
                 self._listener, NotificationCenter.messageReceivedByServer
             )
+        self._refresh_chat_menu()
         self.logger.info("Listening for new outgoing voice messages")
 
     def on_plugin_unload(self):
         self._active = False
+        for item_id in self._chat_menu_items:
+            self.remove_menu_item(item_id)
         for center in self._centers:
             center.removeObserver(
                 self._listener, NotificationCenter.messageReceivedByServer
             )
         self._worker.close()
+
+    def _chat_enabled(self, account, dialog_id):
+        return f"{account}:{dialog_id}" not in self.get_setting("disabled_chats", [])
+
+    def _refresh_chat_menu(self):
+        for item_id in self._chat_menu_items:
+            self.remove_menu_item(item_id)
+        self._chat_menu_items.clear()
+        disabled = []
+        for chat in self.get_setting("disabled_chats", []):
+            account, dialog_id = map(int, chat.split(":"))
+            disabled.append(f"(account == {account} && dialog_id == {dialog_id}L)")
+        condition = " || ".join(disabled) or "false"
+        for enabled, title in (
+            (False, "Отключить авторасшифровку"),
+            (True, "Включить авторасшифровку"),
+        ):
+            visible = f"({condition})" if enabled else f"!({condition})"
+            item_id = self.add_menu_item(
+                MenuItemData(
+                    menu_type=MenuItemType.CHAT_ACTION_MENU,
+                    text=title,
+                    on_click=lambda context, enabled=enabled: self._set_chat_enabled(
+                        context, enabled
+                    ),
+                    condition=f"dialog_id != 0 && {visible}",
+                )
+            )
+            if item_id:
+                self._chat_menu_items.append(item_id)
+
+    def _set_chat_enabled(self, context, enabled):
+        account = context.get("account")
+        dialog_id = context.get("dialog_id")
+        if not self._active or account is None or dialog_id is None:
+            return
+        account, dialog_id = int(account), int(dialog_id)
+        if not dialog_id or DialogObject.isEncryptedDialog(dialog_id):
+            return
+        chat = f"{account}:{dialog_id}"
+        disabled = set(self.get_setting("disabled_chats", []))
+        if enabled:
+            disabled.discard(chat)
+        else:
+            disabled.add(chat)
+            self._cancelled.update(
+                key for key in self._pending if key[:2] == (account, dialog_id)
+            )
+        self.set_setting("disabled_chats", sorted(disabled))
+        self._refresh_chat_menu()
 
     def create_settings(self):
         language = str(self.get_setting("language", "multi")).strip() or "multi"
@@ -356,7 +411,9 @@ class PyosikPlugin(BasePlugin):
         if raw is None or int(args[1]) <= 0 or (len(args) > 6 and bool(args[6])):
             return
         dialog_id = int(args[3])
-        if DialogObject.isEncryptedDialog(dialog_id):
+        if DialogObject.isEncryptedDialog(dialog_id) or not self._chat_enabled(
+            account, dialog_id
+        ):
             return
         message = MessageObject(account, raw, False, False)
         if (
@@ -407,7 +464,7 @@ class PyosikPlugin(BasePlugin):
         )
         self._pending.add(key)
         generation = self._generation
-        future = self._worker.submit(self._transcribe(paths, api_key, language))
+        future = self._worker.submit(self._transcribe(key, paths, api_key, language))
         future.add_done_callback(
             lambda result: run_on_ui_thread(
                 lambda: self._transcription_done(key, message, result, generation)
@@ -417,9 +474,14 @@ class PyosikPlugin(BasePlugin):
             "Queued voice transcription, account=%d message=%d", account, key[2]
         )
 
-    async def _transcribe(self, paths, api_key, language):
+    async def _transcribe(self, key, paths, api_key, language):
         async with self._lock:
-            if not self._active or not self.get_setting("enabled", True):
+            if (
+                not self._active
+                or not self.get_setting("enabled", True)
+                or not self._chat_enabled(*key[:2])
+                or key in self._cancelled
+            ):
                 raise asyncio.CancelledError
             return await self._recognizer.transcribe(paths, api_key, language)
 
@@ -427,7 +489,13 @@ class PyosikPlugin(BasePlugin):
         if not self._active or generation is not self._generation:
             return
         self._pending.discard(key)
-        if not self.get_setting("enabled", True):
+        cancelled = key in self._cancelled
+        self._cancelled.discard(key)
+        if (
+            cancelled
+            or not self.get_setting("enabled", True)
+            or not self._chat_enabled(*key[:2])
+        ):
             return
         try:
             text = future.result()
